@@ -1,0 +1,75 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/*
+ * No external font service: this keeps the build and the runtime free of
+ * any network dependency (and any host to allow-list). The condensed,
+ * uppercase, wide-tracked treatment in .apex-display/.apex-mono below is
+ * what actually carries the automotive-editorial feel, not a specific
+ * typeface — swap in next/font/google (Oswald + JetBrains Mono pair well)
+ * once the deployment target has open network access, and these two
+ * variables are the only thing you'd need to change.
+ */
+:root {
+  --font-display: "Arial Narrow", "Helvetica Neue", Arial, sans-serif;
+  --font-mono: ui-monospace, "SF Mono", "Cascadia Code", "Roboto Mono",
+    Consolas, "Courier New", monospace;
+}
+
+* {
+  cursor: none;
+}
+
+html,
+body {
+  background: #050505;
+  color: #f2f2f2;
+  overflow: hidden;
+  height: 100%;
+  width: 100%;
+  overscroll-behavior: none;
+}
+
+@media (pointer: coarse), (max-width: 768px) {
+  * {
+    cursor: auto;
+  }
+}
+
+.apex-display {
+  font-family: var(--font-display), sans-serif;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.apex-mono {
+  font-family: var(--font-mono), monospace;
+  text-transform: uppercase;
+  letter-spacing: 0.2em;
+  font-size: 0.7rem;
+}
+
+.apex-fade-in {
+  animation: apexFadeIn 0.6s ease forwards;
+}
+
+@keyframes apexFadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .apex-fade-in {
+    animation: none;
+  }
+  * {
+    transition-duration: 0.01ms !important;
+  }
+}
