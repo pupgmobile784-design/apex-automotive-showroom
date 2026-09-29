@@ -7,6 +7,8 @@ import CustomCursor from "@/components/CustomCursor";
 import ScrollController from "@/components/ScrollController";
 import VehicleNav from "@/components/VehicleNav";
 import LoadingScreen from "@/components/LoadingScreen";
+import ModelErrorNotice from "@/components/ModelErrorNotice";
+import CreditsDialog from "@/components/CreditsDialog";
 import { ErrorBoundary } from "@/components/ErrorBoundary";
 import { useSyncReducedMotion } from "@/lib/useReducedMotion";
 
@@ -43,7 +45,9 @@ export default function Home() {
         <AutomotiveScene />
       </ErrorBoundary>
 
+      <ModelErrorNotice />
       <CarInfo />
+      <CreditsDialog />
 
       <div className="pointer-events-none absolute bottom-8 left-1/2 flex -translate-x-1/2 flex-col items-center gap-1 text-center apex-mono text-white/40">
         <span>DRAG TO ROTATE</span>

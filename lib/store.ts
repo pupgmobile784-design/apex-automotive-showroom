@@ -13,6 +13,14 @@ interface ApexState {
   transitioning: boolean;
   reducedMotion: boolean; // mirrors prefers-reduced-motion
 
+  // Real GLB loading state (written by CarModel, read by the loading screen
+  // and the info panel). Progress is bytes-received / bytes-expected.
+  loadProgress: Record<string, number>; // vehicle id -> 0..1
+  readyIds: string[]; // GLBs that finished loading
+  failedIds: string[]; // GLBs that failed to load
+  booted: boolean; // first car is on screen — the loading screen never returns
+  creditsOpen: boolean;
+
   setHovered: (
     id: string | null | ((current: string | null) => string | null)
   ) => void;
@@ -23,6 +31,10 @@ interface ApexState {
   setZoomOffset: (updater: (current: number) => number) => void;
   setPointer: (x: number, y: number) => void;
   setReducedMotion: (v: boolean) => void;
+  setLoadProgress: (id: string, fraction: number) => void;
+  markReady: (id: string) => void;
+  markFailed: (id: string) => void;
+  setCreditsOpen: (open: boolean) => void;
   goTo: (index: number) => void;
   next: () => void;
   prev: () => void;
@@ -39,6 +51,11 @@ export const useApexStore = create<ApexState>((set, get) => ({
   pointer: { x: 0, y: 0 },
   transitioning: false,
   reducedMotion: false,
+  loadProgress: {},
+  readyIds: [],
+  failedIds: [],
+  booted: false,
+  creditsOpen: false,
 
   setHovered: (id) =>
     set((s) => ({
@@ -66,6 +83,33 @@ export const useApexStore = create<ApexState>((set, get) => ({
     set((s) => ({ zoomOffset: updater(s.zoomOffset) })),
   setPointer: (x, y) => set({ pointer: { x, y } }),
   setReducedMotion: (v) => set({ reducedMotion: v }),
+  setLoadProgress: (id, fraction) =>
+    set((s) =>
+      s.loadProgress[id] === fraction
+        ? s
+        : { loadProgress: { ...s.loadProgress, [id]: fraction } }
+    ),
+  markReady: (id) =>
+    set((s) => {
+      if (s.readyIds.includes(id)) return s;
+      const readyIds = [...s.readyIds, id];
+      const active = s.vehicles[s.activeIndex]?.id;
+      return {
+        readyIds,
+        loadProgress: { ...s.loadProgress, [id]: 1 },
+        booted: s.booted || id === active,
+      };
+    }),
+  markFailed: (id) =>
+    set((s) => {
+      if (s.failedIds.includes(id)) return s;
+      const active = s.vehicles[s.activeIndex]?.id;
+      return {
+        failedIds: [...s.failedIds, id],
+        booted: s.booted || id === active,
+      };
+    }),
+  setCreditsOpen: (open) => set({ creditsOpen: open }),
 
   goTo: (index) => {
     const { vehicles, transitioning } = get();

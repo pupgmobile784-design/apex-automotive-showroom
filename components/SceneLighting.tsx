@@ -1,6 +1,17 @@
 "use client";
 
 import { ContactShadows, Environment, MeshReflectorMaterial } from "@react-three/drei";
+import { RoomEnvironment } from "three/examples/jsm/environments/RoomEnvironment.js";
+import { FLOOR_Y } from "@/lib/normalize";
+
+// Built once: RoomEnvironment is a plain THREE.Scene (softbox-lit room),
+// not an R3F component, so it's inserted via <primitive>. <Environment>
+// with children renders whatever's inside it into a cubemap locally (see
+// drei's EnvironmentPortal) rather than fetching an HDR file — the studio's
+// reflections are fully self-contained, no CDN, no external dependency
+// that can fail, get blocked, or add a request-latency stall before the
+// fleet can render.
+const roomEnvironment = new RoomEnvironment();
 
 interface SceneLightingProps {
   /** Set by AutomotiveScene's PerformanceMonitor when frame times climb —
@@ -39,19 +50,20 @@ export default function SceneLighting({ lowQuality = false }: SceneLightingProps
       {/* Fill: cool, low intensity, opposite the key */}
       <pointLight position={[-4, 2, 4]} intensity={0.45} color="#8fb8d9" />
 
-      {/* HDRI-style reflections on the metallic paint without a heavy env map.
-          "studio" reads as a softbox rig rather than a skyline, which is
-          what keeps chrome/paint reflections premium-dark-studio rather
-          than city-demo. Resolution drops under load same as everything
-          else PerformanceMonitor already trims. */}
+      {/* Studio-style reflections on the metallic paint/chrome, rendered
+          locally from a softbox-lit room (see studioEnvironment above) —
+          reads as a premium studio rather than a skyline, with no external
+          asset to fail to load. Resolution drops under load same as
+          everything else PerformanceMonitor already trims. */}
       <Environment
-        preset="studio"
         environmentIntensity={lowQuality ? 0.3 : 0.4}
         resolution={lowQuality ? 128 : 256}
-      />
+      >
+        <primitive object={roomEnvironment} />
+      </Environment>
 
       {/* Glossy studio floor */}
-      <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, -0.9, 0]} receiveShadow>
+      <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, FLOOR_Y, 0]} receiveShadow>
         <planeGeometry args={[60, 60]} />
         <MeshReflectorMaterial
           mirror={0.3}
@@ -72,7 +84,7 @@ export default function SceneLighting({ lowQuality = false }: SceneLightingProps
           even where the reflective floor's own shadow falls off */}
       {!lowQuality && (
         <ContactShadows
-          position={[0, -0.89, 0]}
+          position={[0, FLOOR_Y + 0.01, 0]}
           opacity={0.6}
           scale={16}
           blur={2.2}

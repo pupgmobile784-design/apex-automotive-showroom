@@ -1,110 +1,173 @@
+/**
+ * Fleet data — the single source of truth for every car in APEX.
+ *
+ * Every entry maps to a real GLB in /public/models. Nothing here is a
+ * placeholder: the 3D scene renders exactly these files.
+ *
+ * ── Per-model correction (all optional) ─────────────────────────────────
+ * lib/normalize.ts already auto-aligns (length → Z axis), auto-scales (every
+ * car to the same length), auto-centers and drops every model onto the
+ * floor, whatever units/origin it was exported with. These three fields
+ * exist only to correct a specific export's quirks, without touching any
+ * component:
+ *
+ *   rotationOffset   radians around Y, applied BEFORE measuring. The whole
+ *                    fleet is authored front-facing +Z, so it is 0 for all
+ *                    nine shipped models. Use Math.PI for a model that
+ *                    loads backwards.
+ *   scaleMultiplier  multiplies the auto-computed fit-to-fleet scale
+ *                    (1.06 = 6 % bigger next to its neighbours).
+ *   positionOffset   [x, y, z] nudge after centering + flooring, in scene
+ *                    units (use a small negative y if wheels float).
+ *
+ * ── Adding a car ────────────────────────────────────────────────────────
+ * 1. Put the .glb in /public/models (lowercase, hyphenated filename).
+ * 2. Append an entry below. That's it — the arc, camera framing, loader,
+ *    counter and navigation all read this array.
+ *
+ * Specs come from the Supercar Vault 3D pack's own data. Where the pack
+ * only carried a copy-pasted placeholder (Caspita, Mach 1, AMG GT3), the
+ * figures are intentionally left out rather than invented — fill them in
+ * when you have a source and they will appear automatically.
+ */
+
 export interface Vehicle {
   id: string;
-  name: string;
+  name: string; // model name shown as the large heading
   brand: string;
-  model: string; // path to a GLB/GLTF file, e.g. "/models/911-gt3.glb"
-  power: string; // "502 HP"
-  torque: string; // "470 Nm"
-  acceleration: string; // "3.4 SEC"
-  topSpeed: string; // "318 KM/H"
-  color: string; // hex used by the procedural placeholder body material
+  tagline?: string;
+  model: string; // public path to the GLB, e.g. "/models/ferrari-f50.glb"
 
-  /**
-   * Per-vehicle correction for however the source GLB was modeled/exported.
-   * CarModel.tsx already auto-centers, auto-floors, and auto-scales every
-   * model to the fleet's target length regardless of its native units or
-   * origin — these three are only for fixing orientation/proportion quirks
-   * a specific export has (e.g. it faces -Z instead of +Z), without ever
-   * touching CarModel.tsx itself. All three are optional; omitting them is
-   * identical to { rotationOffset: 0, scaleMultiplier: 1, positionOffset:
-   * [0, 0, 0] }.
-   *
-   * Example, for a model that loads facing backwards:
-   *   { id: "porsche-911-gt3", ..., rotationOffset: Math.PI }
-   */
-  rotationOffset?: number; // radians, applied around Y before auto-fit measures the model
-  scaleMultiplier?: number; // multiplies the auto-computed fit-to-fleet scale
-  positionOffset?: [number, number, number]; // nudges the model after it's been centered + floored
+  power?: string; // "513 HP"
+  torque?: string; // "470 NM"
+  acceleration?: string; // "3.7 SEC"
+  topSpeed?: string; // "325 KM/H"
+
+  rotationOffset?: number;
+  scaleMultiplier?: number;
+  positionOffset?: [number, number, number];
+
+  /** Attribution — shown in the Credits dialog. */
+  credit: {
+    title: string; // model title as named in the source pack
+    source: string; // where the pack says it came from
+    author?: string; // only when the pack's own filename names one
+    file: string; // original filename inside Supercar-Vault-3D-main/models
+  };
 }
 
-/**
- * Fleet data.
- *
- * `model` points at a GLB path. <CarModel /> (components/CarModel.tsx) tries
- * to load it with useGLTF inside a Suspense + error boundary, and falls back
- * to a high-quality procedural body if the file is missing or fails to
- * parse — see components/CarBody.tsx. Drop a real .glb into /public/models
- * with a matching filename and it is picked up automatically; no other code
- * needs to change. If the model loads facing the wrong way, looks
- * mis-scaled next to the rest of the fleet, or sits slightly off the floor,
- * add rotationOffset / scaleMultiplier / positionOffset above rather than
- * touching CarModel.tsx.
- */
+const SOURCE = "Sketchfab (via the Supercar Vault 3D pack)";
+
 export const VEHICLES: Vehicle[] = [
   {
-    id: "porsche-911-gt3",
-    name: "PORSCHE 911 GT3",
-    brand: "PORSCHE",
-    model: "/models/porsche-911-gt3.glb",
-    power: "502 HP",
-    torque: "470 NM",
-    acceleration: "3.4 SEC",
-    topSpeed: "318 KM/H",
-    color: "#e6e6e6",
+    id: "pagani-imola",
+    name: "IMOLA",
+    brand: "PAGANI",
+    tagline: "Where racing DNA meets the open road.",
+    model: "/models/pagani-imola.glb",
+    power: "827 HP",
+    acceleration: "2.7 SEC",
+    topSpeed: "300 KM/H",
+    credit: { title: "2021 Pagani Imola", source: SOURCE, file: "2021_pagani_imola.glb" },
   },
   {
-    id: "bmw-m4",
-    name: "BMW M4",
-    brand: "BMW",
-    model: "/models/bmw-m4.glb",
-    power: "503 HP",
-    torque: "650 NM",
-    acceleration: "3.5 SEC",
-    topSpeed: "290 KM/H",
-    color: "#1b3a6b",
-  },
-  {
-    id: "amg-gt",
-    name: "MERCEDES-AMG GT",
-    brand: "MERCEDES-AMG",
-    model: "/models/amg-gt.glb",
-    power: "523 HP",
-    torque: "684 NM",
-    acceleration: "3.6 SEC",
-    topSpeed: "312 KM/H",
-    color: "#0c0c0c",
-  },
-  {
-    id: "audi-r8",
-    name: "AUDI R8",
-    brand: "AUDI",
-    model: "/models/audi-r8.glb",
-    power: "562 HP",
-    torque: "550 NM",
+    id: "mclaren-f1-gtr-longtail",
+    name: "F1 GTR LONGTAIL",
+    brand: "MCLAREN",
+    tagline: "The Le Mans legend, born on the limit.",
+    model: "/models/mclaren-f1-gtr-longtail.glb",
+    power: "668 HP",
     acceleration: "3.2 SEC",
-    topSpeed: "331 KM/H",
-    color: "#8a8f94",
+    topSpeed: "391 KM/H",
+    credit: {
+      title: "McLaren F1 GTR Longtail",
+      source: `${SOURCE}; filename credits www.vecarz.com`,
+      file: "mclaren_f1_gtr_longtail__www.vecarz.com.glb",
+    },
   },
   {
-    id: "lamborghini-huracan",
-    name: "LAMBORGHINI HURAC\u00c1N",
-    brand: "LAMBORGHINI",
-    model: "/models/lamborghini-huracan.glb",
-    power: "631 HP",
-    torque: "600 NM",
-    acceleration: "2.9 SEC",
-    topSpeed: "325 KM/H",
-    color: "#e10600",
+    id: "koenigsegg-one1",
+    name: "ONE:1",
+    brand: "KOENIGSEGG",
+    tagline: "One megawatt. One megagram. One-to-one.",
+    model: "/models/koenigsegg-one1.glb",
+    power: "1,360 HP",
+    acceleration: "2.8 SEC",
+    topSpeed: "440 KM/H",
+    credit: { title: "2014 Koenigsegg One:1", source: SOURCE, file: "2014_koenigsegg_one-1.glb" },
   },
   {
-    id: "ferrari-488",
-    name: "FERRARI 488",
+    id: "mclaren-p1-gtr",
+    name: "P1 GTR",
+    brand: "MCLAREN",
+    tagline: "Track-only perfection, no compromise.",
+    model: "/models/mclaren-p1-gtr.glb",
+    power: "1,000 HP",
+    acceleration: "2.4 SEC",
+    topSpeed: "350 KM/H",
+    credit: { title: "McLaren P1 GTR (free)", source: SOURCE, file: "free_mclaren_p1_gtr.glb" },
+  },
+  {
+    id: "porsche-911-gt3-rs",
+    name: "911 GT3 RS",
+    brand: "PORSCHE",
+    tagline: "Motorsport engineering, undiluted.",
+    model: "/models/porsche-911-gt3-rs.glb",
+    power: "525 HP",
+    acceleration: "3.2 SEC",
+    topSpeed: "296 KM/H",
+    credit: {
+      title: "2023 Porsche 911 GT3 RS 2.7 Carrera Tribute (992)",
+      source: SOURCE,
+      file: "2023_porsche_911_gt3_rs_2.7_carrera_tribute_992.glb",
+    },
+  },
+  {
+    id: "mercedes-amg-gt3",
+    name: "AMG GT3",
+    brand: "MERCEDES-AMG",
+    tagline: "Mercedes-AMG GT3, 2016.",
+    model: "/models/mercedes-amg-gt3.glb",
+    credit: {
+      title: "Mercedes-AMG GT3",
+      source: `${SOURCE}; filename credits www.vecarz.com`,
+      file: "mercedes-amg_gt3__www.vecarz.com.glb",
+    },
+  },
+  {
+    id: "ferrari-f50",
+    name: "F50",
     brand: "FERRARI",
-    model: "/models/ferrari-488.glb",
-    power: "661 HP",
-    torque: "760 NM",
-    acceleration: "3.0 SEC",
-    topSpeed: "330 KM/H",
-    color: "#a10000",
+    tagline: "A Formula 1 car built for the road.",
+    model: "/models/ferrari-f50.glb",
+    power: "513 HP",
+    acceleration: "3.7 SEC",
+    topSpeed: "325 KM/H",
+    credit: { title: "1995 Ferrari F50", source: SOURCE, file: "1995_ferrari_f50.glb" },
+  },
+  {
+    id: "jiotto-caspita",
+    name: "CASPITA F1",
+    brand: "JIOTTO",
+    tagline: "The legend that changed the game.",
+    model: "/models/jiotto-caspita.glb",
+    credit: {
+      title: "Jiotto Caspita F1 Road Car (1989)",
+      source: SOURCE,
+      author: "alex.ka. (as named in the source filename)",
+      file: "jiotto_caspita_f1_road_car_1989_by_alex.ka..glb",
+    },
+  },
+  {
+    id: "ford-mustang-mach-1",
+    name: "MUSTANG MACH 1",
+    brand: "FORD",
+    tagline: "428 Cobra Jet, 1969.",
+    model: "/models/ford-mustang-mach-1.glb",
+    credit: {
+      title: "1969 Ford Mustang Mach 1 428 Cobra Jet",
+      source: SOURCE,
+      file: "1969_ford_mustang_mach-1_428_cobra_jet.glb",
+    },
   },
 ];

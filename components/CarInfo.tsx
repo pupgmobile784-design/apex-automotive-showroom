@@ -2,15 +2,26 @@
 
 import { useApexStore } from "@/lib/store";
 
+const SPEC_FIELDS = [
+  { key: "power", label: "POWER" },
+  { key: "torque", label: "TORQUE" },
+  { key: "acceleration", label: "0–100 KM/H" },
+  { key: "topSpeed", label: "TOP SPEED" },
+] as const;
+
 export default function CarInfo() {
-  // Selective subscriptions only — the previous whole-store read here
-  // (`useApexStore()`) re-rendered this component on every pointer move,
-  // drag tick, and camera-driven store update in the entire app, none of
-  // which this component displays.
+  // Selective subscriptions only — a whole-store read here would re-render
+  // on every pointer move, drag tick, and camera-driven store update in the
+  // entire app, none of which this component displays.
   const vehicles = useApexStore((s) => s.vehicles);
   const activeIndex = useApexStore((s) => s.activeIndex);
   const car = vehicles[activeIndex];
   const total = vehicles.length;
+
+  // Not every source model in the pack carried a verified spec sheet — see
+  // lib/vehicles.ts. Rather than invent numbers, a car simply shows fewer
+  // fields; nothing renders as "undefined".
+  const specs = SPEC_FIELDS.filter(({ key }) => car[key]);
 
   return (
     <>
@@ -22,25 +33,22 @@ export default function CarInfo() {
         <div className="apex-display text-3xl leading-none text-white sm:text-4xl">
           {car.name}
         </div>
+        {car.tagline && (
+          <div className="apex-mono mt-2 max-w-[22rem] normal-case tracking-normal text-white/40">
+            {car.tagline}
+          </div>
+        )}
 
-        <div className="mt-5 grid grid-cols-2 gap-x-8 gap-y-3 apex-mono text-white/60">
-          <div>
-            <div className="text-white/30">POWER</div>
-            <div className="text-white">{car.power}</div>
+        {specs.length > 0 && (
+          <div className="mt-5 grid grid-cols-2 gap-x-8 gap-y-3 apex-mono text-white/60">
+            {specs.map(({ key, label }) => (
+              <div key={key}>
+                <div className="text-white/30">{label}</div>
+                <div className="text-white">{car[key]}</div>
+              </div>
+            ))}
           </div>
-          <div>
-            <div className="text-white/30">TORQUE</div>
-            <div className="text-white">{car.torque}</div>
-          </div>
-          <div>
-            <div className="text-white/30">0–100 KM/H</div>
-            <div className="text-white">{car.acceleration}</div>
-          </div>
-          <div>
-            <div className="text-white/30">TOP SPEED</div>
-            <div className="text-white">{car.topSpeed}</div>
-          </div>
-        </div>
+        )}
       </div>
 
       <div className="pointer-events-none absolute bottom-8 right-8 z-20 flex flex-col items-end gap-2.5">

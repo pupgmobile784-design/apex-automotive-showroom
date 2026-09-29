@@ -1,130 +1,88 @@
 "use client";
 
-import { Suspense, useEffect, useMemo } from "react";
-import { useGLTF } from "@react-three/drei";
-import { Box3, Material, Mesh, Object3D, Vector3 } from "three";
+import { Suspense, useCallback, useEffect, useMemo } from "react";
+import { useThree } from "@react-three/fiber";
+import type { Material, Object3D } from "three";
+import { useApexStore } from "@/lib/store";
 import type { Vehicle } from "@/lib/vehicles";
-import { captureMaterialBaseline } from "@/lib/materialDimming";
-import CarBody from "./CarBody";
+import { useCarGLTF } from "@/lib/useCarGLTF";
+import { normalizeCar } from "@/lib/normalize";
+import { prepareCarMaterials } from "@/lib/prepareMaterials";
+import { releaseModel, retainModel } from "@/lib/modelCache";
 import { ErrorBoundary } from "./ErrorBoundary";
+
+export interface CarReadyInfo {
+  root: Object3D;
+  materials: Material[];
+}
 
 interface CarModelProps {
   vehicle: Vehicle;
-  onReady?: (materials: Material[]) => void;
-  /**
-   * Gate used by CarCollection's progressive-load strategy (see
-   * lib/useProgressiveLoad.ts): while false, this renders the procedural
-   * placeholder directly and never attempts the GLB fetch at all, so a
-   * fleet of six real models doesn't all compete for bandwidth/parse time
-   * the instant the scene mounts. Defaults to true so CarModel is still a
-   * safe drop-in on its own.
-   */
-  allowRealModel?: boolean;
-}
-
-const TARGET_LENGTH = 4.2; // matches the placeholder body, keeps the whole fleet scaled consistently
-
-function collectMaterials(root: Object3D): Material[] {
-  const found: Material[] = [];
-  root.traverse((obj) => {
-    const mesh = obj as Mesh;
-    if (!mesh.isMesh || !mesh.material) return;
-    const mats = Array.isArray(mesh.material) ? mesh.material : [mesh.material];
-    mats.forEach((m) => {
-      // Deliberately do NOT touch `transparent`/`opacity` here. Real GLB
-      // materials must keep whatever the artist/exporter authored — glass
-      // stays transparent, paint/chrome/carbon/tires stay opaque — or the
-      // renderer's depth sorting breaks (ghosting/z-fighting on overlapping
-      // panels). We only snapshot the baseline the presence system needs;
-      // see lib/materialDimming.ts for how focus/hover is actually shown.
-      captureMaterialBaseline(m);
-      found.push(m);
-    });
-  });
-  return found;
+  onReady: (info: CarReadyInfo) => void;
 }
 
 function GLTFCar({ vehicle, onReady }: CarModelProps) {
-  const { scene } = useGLTF(vehicle.model);
+  const gl = useThree((s) => s.gl);
+  const setLoadProgress = useApexStore((s) => s.setLoadProgress);
+  const markReady = useApexStore((s) => s.markReady);
 
-  const normalized = useMemo(() => {
-    const clone = scene.clone(true);
+  const handleProgress = useCallback(
+    (e: ProgressEvent) => {
+      // Content-Length can describe the compressed transfer while the loader
+      // counts decoded bytes, so hold at 99 % until the file has really
+      // finished rather than ever claiming 100 % early.
+      if (e.lengthComputable && e.total > 0) {
+        setLoadProgress(vehicle.id, Math.min(0.99, e.loaded / e.total));
+      }
+    },
+    [setLoadProgress, vehicle.id]
+  );
 
-    // Apply the model's own orientation correction FIRST, so every
-    // measurement below (size, center, floor) is taken in the orientation
-    // the car will actually be shown in — this is what lets rotationOffset
-    // correct a backwards-facing export without distorting its fit.
-    clone.rotation.y = vehicle.rotationOffset ?? 0;
-    clone.updateMatrixWorld(true);
+  const { scene } = useCarGLTF(vehicle.model, handleProgress);
 
-    const box = new Box3().setFromObject(clone);
-    const size = new Vector3();
-    box.getSize(size);
-    const longestHorizontal = Math.max(size.x, size.z) || 1;
-    const autoScale = TARGET_LENGTH / longestHorizontal;
-    clone.scale.setScalar(autoScale * (vehicle.scaleMultiplier ?? 1));
-    clone.updateMatrixWorld(true);
+  // Keep the decoded model alive while this car is mounted; free its GPU
+  // memory once nothing shows it (see lib/modelCache.ts).
+  useEffect(() => {
+    retainModel(vehicle.model);
+    return () => releaseModel(vehicle.model, scene);
+  }, [vehicle.model, scene]);
 
-    // Re-measure after scaling, then center on X/Z and drop it onto the floor.
-    const scaledBox = new Box3().setFromObject(clone);
-    const center = new Vector3();
-    scaledBox.getCenter(center);
-    clone.position.x -= center.x;
-    clone.position.z -= center.z;
-    clone.position.y -= scaledBox.min.y;
-
-    const [ox, oy, oz] = vehicle.positionOffset ?? [0, 0, 0];
-    clone.position.x += ox;
-    clone.position.y += oy;
-    clone.position.z += oz;
-
-    clone.traverse((obj) => {
-      obj.castShadow = true;
-      obj.receiveShadow = true;
-    });
-
-    return clone;
-  }, [scene, vehicle.rotationOffset, vehicle.scaleMultiplier, vehicle.positionOffset]);
+  const car = useMemo(
+    () => normalizeCar(scene, vehicle),
+    [scene, vehicle]
+  );
 
   useEffect(() => {
-    onReady?.(collectMaterials(normalized));
-    // No disposal here: three.js GLTF geometries/materials are cached and
-    // reused by useGLTF, so they shouldn't be torn down on unmount.
-  }, [normalized, onReady]);
+    const materials = prepareCarMaterials(
+      car,
+      Math.min(8, gl.capabilities.getMaxAnisotropy())
+    );
+    onReady({ root: car, materials });
+    markReady(vehicle.id);
+  }, [car, gl, onReady, markReady, vehicle.id]);
 
-  return <primitive object={normalized} />;
+  return <primitive object={car} />;
 }
 
 /**
- * Drop-in vehicle renderer. Give it a Vehicle and it will:
- *  1. try to load vehicle.model as a GLB/GLTF (skipped entirely while
- *     allowRealModel is false),
- *  2. auto-scale + center + floor it so any model "just works" regardless
- *     of the units/orientation it was exported with, then apply that
- *     vehicle's rotationOffset/scaleMultiplier/positionOffset correction,
- *  3. fall back to a procedural placeholder body while loading AND if the
- *     load fails for any reason (missing file, bad parse, network error) —
- *     isolated per-car by its own ErrorBoundary, so one bad GLB never takes
- *     down the rest of the fleet or the whole Canvas.
- *
- * Callers never need to know which path was taken — `onReady` always fires
- * with a flat list of materials, which lib/materialDimming.ts drives
- * uniformly for hover/focus brightening.
+ * Loads one vehicle's real GLB. While it streams in nothing is drawn (the
+ * loading screen covers the first car; neighbours simply fade in when
+ * ready) — there is deliberately no stand-in geometry. If the file is
+ * missing or corrupt, only this car is skipped: the failure is recorded so
+ * the UI can say so, and the other cars and the Canvas are unaffected.
  */
-export default function CarModel({
-  vehicle,
-  onReady,
-  allowRealModel = true,
-}: CarModelProps) {
-  const fallback = <CarBody color={vehicle.color} onReady={onReady} />;
-
-  if (!allowRealModel) return fallback;
+export default function CarModel({ vehicle, onReady }: CarModelProps) {
+  const markFailed = useApexStore((s) => s.markFailed);
+  const onError = useCallback(
+    () => markFailed(vehicle.id),
+    [markFailed, vehicle.id]
+  );
 
   return (
-    <Suspense fallback={fallback}>
-      <ErrorBoundary fallback={fallback}>
+    <ErrorBoundary fallback={null} onError={onError}>
+      <Suspense fallback={null}>
         <GLTFCar vehicle={vehicle} onReady={onReady} />
-      </ErrorBoundary>
-    </Suspense>
+      </Suspense>
+    </ErrorBoundary>
   );
 }
