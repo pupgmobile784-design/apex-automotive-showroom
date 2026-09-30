@@ -22,17 +22,13 @@ interface CarProps {
   vehicle: Vehicle;
   index: number;
   basePosition: [number, number, number];
-  baseRotationY: number;
+  /** False only while this car is fading out after being replaced. */
   isActive: boolean;
-  /** Within ±LOAD_RANGE of the active car — visible and interactive. */
-  onStage: boolean;
-  /** Allowed to stream its GLB now (see lib/useProgressiveLoad.ts). */
-  loadModel: boolean;
 }
 
 // One soft radial blob shared by every car: a cheap, stable "grounded on
-// the floor" shadow that costs nothing per frame, unlike re-rendering nine
-// multi-hundred-thousand-triangle cars into a shadow map.
+// the floor" shadow that costs nothing per frame, unlike re-rendering a
+// multi-hundred-thousand-triangle car into a shadow map every frame.
 let blobTexture: CanvasTexture | null = null;
 function getBlobTexture() {
   if (blobTexture) return blobTexture;
@@ -56,15 +52,14 @@ function setCastShadow(root: Object3D, cast: boolean) {
   });
 }
 
-export default function Car({
-  vehicle,
-  index,
-  basePosition,
-  baseRotationY,
-  isActive,
-  onStage,
-  loadModel,
-}: CarProps) {
+/**
+ * One vehicle, alone on the turntable. It does not move on its own: no
+ * idle auto-rotate, no automatic zoom. The only things that move it are
+ * the person's own drag (rotation, with inertia that coasts to a stop —
+ * never restarts on its own) and switching to a different car (a deliberate
+ * crossfade, not an ambient animation).
+ */
+export default function Car({ vehicle, index, basePosition, isActive }: CarProps) {
   const groupRef = useRef<Group>(null);
   const hitRef = useRef<Mesh>(null);
   const blobRef = useRef<Mesh>(null);
@@ -73,21 +68,16 @@ export default function Car({
     index
   );
 
-  const cinematicSpin = useRef(0);
   const modelRoot = useRef<Object3D | null>(null);
-  const isActiveRef = useRef(isActive);
-  isActiveRef.current = isActive;
-
-  // Populated by CarModel once the real GLB is ready. Refs, not state, so
+  // Populated by CarModel once the real GLB is ready. A ref, not state, so
   // 60fps updates below never trigger a re-render.
   const materialsRef = useRef<Material[]>([]);
   const handleReady = useCallback(
     ({ root, materials }: CarReadyInfo) => {
       materialsRef.current = materials;
       modelRoot.current = root;
-      setCastShadow(root, isActiveRef.current);
+      setCastShadow(root, true);
 
-      // Size the invisible hover proxy and the ground shadow to this car.
       const d = carDimensions.get(vehicle.id);
       if (d) {
         hitRef.current?.scale.set(d.width * 1.05, d.height, d.length * 1.05);
@@ -98,90 +88,65 @@ export default function Car({
     [vehicle.id]
   );
 
-  // Only the focused car casts a real shadow.
-  useEffect(() => {
-    if (modelRoot.current) setCastShadow(modelRoot.current, isActive);
-  }, [isActive]);
-
-  // Start in the right pose so nothing pops on the first frame.
+  // Starts invisible/scaled-down so the very first frame doesn't pop; the
+  // per-frame damping below grows it in.
   useEffect(() => {
     const g = groupRef.current;
     if (!g) return;
-    g.scale.setScalar(onStage ? (isActive ? 1.15 : 0.85) : 0);
-    g.visible = onStage;
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    g.scale.setScalar(0.001);
   }, []);
 
   useFrame((_, rawDelta) => {
     const g = groupRef.current;
     if (!g) return;
 
-    // All of this is only needed inside this per-frame callback, so it is
-    // read with getState() instead of the hook — this component never
-    // re-renders because the pointer moved or a drag ticked.
-    const {
-      hoveredId,
-      isHeld,
-      dragRotation,
-      pointer,
-      reducedMotion,
-      decayDragVelocity,
-    } = useApexStore.getState();
+    // hoveredId/isHeld/dragRotation/reducedMotion only ever feed this
+    // per-frame callback, so they're read with getState() instead of the
+    // hook — this component never re-renders just because the pointer
+    // moved or a drag ticked.
+    const { hoveredId, isHeld, dragRotation, reducedMotion, decayDragVelocity } =
+      useApexStore.getState();
     const isHovered = hoveredId === vehicle.id;
-
-    // Reduced-motion: everything still moves, just fast enough to feel
-    // like a cut rather than a cinematic glide.
     const delta = reducedMotion ? Math.min(rawDelta * 6, 0.5) : rawDelta;
 
     if (isActive) decayDragVelocity(rawDelta);
 
-    const hoverPush = isHovered && !isActive ? 0.35 : 0;
     g.position.x = MathUtils.damp(g.position.x, basePosition[0], 4, delta);
     g.position.y = MathUtils.damp(g.position.y, basePosition[1], 4, delta);
-    g.position.z = MathUtils.damp(
-      g.position.z,
-      basePosition[2] + hoverPush,
-      4,
-      delta
-    );
+    g.position.z = MathUtils.damp(g.position.z, basePosition[2], 4, delta);
 
-    // Focused car reads largest, hovered a touch bigger, the rest recede;
-    // cars leaving the stage shrink away and stop being drawn.
-    const targetScale = !onStage ? 0 : isActive ? 1.15 : isHovered ? 1.05 : 0.85;
-    const s = MathUtils.damp(g.scale.x, targetScale, 4, delta);
-    g.scale.setScalar(s);
-    const shown = s > 0.02;
+    // The only size states are "on stage" and "fading out after being
+    // replaced" — no hover/idle pulsing, since there's nothing else on
+    // stage to compare it against any more.
+    const targetScale = isActive ? 1 : 0;
+    const s = MathUtils.damp(g.scale.x, targetScale, isActive ? 4 : 5, delta);
+    g.scale.setScalar(Math.max(s, 0.001));
+    const shown = s > 0.01;
     if (g.visible !== shown) g.visible = shown;
     if (!shown) return;
 
-    // Only cars actually on stage are hoverable.
-    if (hitRef.current) hitRef.current.raycast = onStage ? Mesh.prototype.raycast : () => {};
-
-    if (isActive) {
-      cinematicSpin.current += isHeld || reducedMotion ? 0 : delta * 0.15;
-      g.rotation.y = MathUtils.damp(
-        g.rotation.y,
-        baseRotationY + cinematicSpin.current + dragRotation,
-        isHeld ? 12 : 3,
-        delta
-      );
-      g.rotation.x = MathUtils.damp(g.rotation.x, 0, 4, delta);
-    } else {
-      g.rotation.y = MathUtils.damp(g.rotation.y, baseRotationY, 4, delta);
-      const tilt = isHovered ? -pointer.y * 0.05 : 0;
-      g.rotation.x = MathUtils.damp(g.rotation.x, tilt, 4, delta);
+    // Only the active car is hoverable/draggable; an outgoing car that's
+    // still fading out shouldn't steal pointer events.
+    if (hitRef.current) {
+      hitRef.current.raycast = isActive ? Mesh.prototype.raycast : () => {};
     }
 
-    // Brighten the focused/hovered car, dim the rest — via colour,
-    // reflection and emissive only, never opacity. See lib/materialDimming.ts.
+    // Rotation is entirely the person's own doing: dragRotation only
+    // changes from their drag (with inertia that decays to a stop via
+    // decayDragVelocity above — it never restarts on its own). Nothing
+    // here adds rotation on its own.
+    g.rotation.y = MathUtils.damp(g.rotation.y, dragRotation, isHeld ? 12 : 3, delta);
+
+    // Brighten on hover, otherwise sit at full presence — there's no
+    // "other car" to dim relative to any more. See lib/materialDimming.ts.
     for (const mat of materialsRef.current) {
-      applyMaterialPresence(mat, isActive, isHovered, 4, delta);
+      applyMaterialPresence(mat, true, isHovered, 4, delta);
     }
 
     if (blobRef.current) {
       (blobRef.current.material as MeshBasicMaterial).opacity = MathUtils.damp(
         (blobRef.current.material as MeshBasicMaterial).opacity,
-        isActive ? 0.85 : 0.5,
+        0.75,
         4,
         delta
       );
@@ -220,7 +185,7 @@ export default function Car({
         />
       </mesh>
 
-      {loadModel && <CarModel vehicle={vehicle} onReady={handleReady} />}
+      <CarModel vehicle={vehicle} onReady={handleReady} />
     </group>
   );
 }

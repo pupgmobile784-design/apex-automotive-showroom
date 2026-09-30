@@ -1,54 +1,57 @@
 "use client";
 
+import { useEffect, useRef, useState } from "react";
 import { FLOOR_Y } from "@/lib/normalize";
 import { useApexStore } from "@/lib/store";
-import {
-  LOAD_RANGE,
-  shortestOffset,
-  useProgressiveModelGate,
-} from "@/lib/useProgressiveLoad";
 import Car from "./Car";
 
-const ARC_RADIUS = 6.5;
-const ANGLE_STEP = 0.6; // radians between neighbouring cars in the arc
+const CENTER: [number, number, number] = [0, FLOOR_Y, 0];
 
+/**
+ * One car on stage at a time — centered, alone, still. Switching cars
+ * (scroll / swipe / arrow keys / the vehicle nav) crossfades: the outgoing
+ * car scales and dims out (handled inside Car.tsx) while the new one
+ * scales in, instead of the whole scene rearranging around a crowd of
+ * cars. The outgoing car is kept mounted just long enough to finish that
+ * exit before being dropped.
+ */
 export default function CarCollection() {
   const vehicles = useApexStore((s) => s.vehicles);
   const activeIndex = useApexStore((s) => s.activeIndex);
-  const loadable = useProgressiveModelGate(activeIndex, vehicles.length);
+  const activeVehicle = vehicles[activeIndex];
+  const activeId = activeVehicle?.id;
+
+  const [mountedIds, setMountedIds] = useState<string[]>(
+    activeId ? [activeId] : []
+  );
+  const prevActiveId = useRef<string | undefined>(activeId);
+
+  useEffect(() => {
+    if (!activeId || activeId === prevActiveId.current) return;
+    const outgoing = prevActiveId.current;
+    prevActiveId.current = activeId;
+
+    setMountedIds((prev) => (prev.includes(activeId) ? prev : [...prev, activeId]));
+
+    if (!outgoing) return;
+    const timer = window.setTimeout(() => {
+      setMountedIds((prev) => prev.filter((id) => id !== outgoing));
+    }, 700); // matches the scale/dim damping in Car.tsx finishing its exit
+    return () => window.clearTimeout(timer);
+  }, [activeId]);
 
   return (
     <group>
-      {vehicles.map((vehicle, i) => {
-        const offset = shortestOffset(i, activeIndex, vehicles.length);
-        const isActive = offset === 0;
-        // Only the active car and the ones flanking it are on stage; the
-        // rest wait out of sight (and out of memory) and glide in as the
-        // fleet rotates towards them.
-        const onStage = Math.abs(offset) <= LOAD_RANGE;
-        const angle = offset * ANGLE_STEP;
-
-        const basePosition: [number, number, number] = isActive
-          ? [0, FLOOR_Y, 1.2]
-          : [
-              Math.sin(angle) * ARC_RADIUS,
-              FLOOR_Y,
-              -Math.cos(angle) * ARC_RADIUS +
-                1.2 -
-                ARC_RADIUS -
-                Math.abs(offset) * 0.6,
-            ];
-
+      {mountedIds.map((id) => {
+        const vehicle = vehicles.find((v) => v.id === id);
+        if (!vehicle) return null;
         return (
           <Car
             key={vehicle.id}
             vehicle={vehicle}
-            index={i}
-            basePosition={basePosition}
-            baseRotationY={isActive ? 0 : -angle}
-            isActive={isActive}
-            onStage={onStage}
-            loadModel={loadable.has(i)}
+            index={vehicles.indexOf(vehicle)}
+            basePosition={CENTER}
+            isActive={vehicle.id === activeId}
           />
         );
       })}
