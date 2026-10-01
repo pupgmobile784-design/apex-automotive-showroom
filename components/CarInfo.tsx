@@ -1,5 +1,7 @@
 "use client";
 
+import { useEffect, useRef } from "react";
+import { gsap } from "gsap";
 import { useApexStore } from "@/lib/store";
 
 const SPEC_FIELDS = [
@@ -23,24 +25,75 @@ export default function CarInfo() {
   // fields; nothing renders as "undefined".
   const specs = SPEC_FIELDS.filter(({ key }) => car[key]);
 
+  const brandRef = useRef<HTMLDivElement>(null);
+  const nameRef = useRef<HTMLDivElement>(null);
+  const taglineRef = useRef<HTMLDivElement>(null);
+  const specsRef = useRef<HTMLDivElement>(null);
+
+  // Information has hierarchy, not just a fade: manufacturer, then the
+  // car's name (the one "big reveal" moment), then the tagline, then specs
+  // appearing in sequence — matching how a premium automotive campaign
+  // actually paces a reveal, rather than every element fading in at once.
+  // Re-keyed per car.id (the parent div's key), so this fires fresh on
+  // every switch.
+  useEffect(() => {
+    const tl = gsap.timeline({ defaults: { ease: "power2.out" } });
+    tl.fromTo(brandRef.current, { opacity: 0, y: 6 }, { opacity: 1, y: 0, duration: 0.35 })
+      .fromTo(
+        nameRef.current,
+        { opacity: 0, y: 14 },
+        { opacity: 1, y: 0, duration: 0.5 },
+        "-=0.15"
+      )
+      .fromTo(
+        taglineRef.current,
+        { opacity: 0 },
+        { opacity: 1, duration: 0.4 },
+        "-=0.2"
+      );
+    if (specsRef.current) {
+      tl.fromTo(
+        specsRef.current.children,
+        { opacity: 0, y: 6 },
+        { opacity: 1, y: 0, duration: 0.3, stagger: 0.08 },
+        "-=0.15"
+      );
+    }
+    return () => {
+      tl.kill();
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [car.id]);
+
   return (
     <>
       <div
         key={car.id}
-        className="apex-fade-in pointer-events-none absolute bottom-8 left-8 z-20 max-w-xs"
+        className="pointer-events-none absolute bottom-8 left-8 z-20 max-w-xs"
       >
-        <div className="apex-mono text-accent">{car.brand}</div>
-        <div className="apex-display text-3xl leading-none text-white sm:text-4xl">
+        <div ref={brandRef} className="apex-mono text-accent">
+          {car.brand}
+        </div>
+        <div
+          ref={nameRef}
+          className="apex-display text-3xl leading-none text-white sm:text-4xl"
+        >
           {car.name}
         </div>
         {car.tagline && (
-          <div className="apex-mono mt-2 max-w-[22rem] normal-case tracking-normal text-white/40">
+          <div
+            ref={taglineRef}
+            className="apex-mono mt-2 max-w-[22rem] normal-case tracking-normal text-white/40"
+          >
             {car.tagline}
           </div>
         )}
 
         {specs.length > 0 && (
-          <div className="mt-5 grid grid-cols-2 gap-x-8 gap-y-3 apex-mono text-white/60">
+          <div
+            ref={specsRef}
+            className="mt-5 grid grid-cols-2 gap-x-8 gap-y-3 apex-mono text-white/60"
+          >
             {specs.map(({ key, label }) => (
               <div key={key}>
                 <div className="text-white/30">{label}</div>
